@@ -1,6 +1,7 @@
 package org.borium.mediawikiconverter;
 
 import java.io.*;
+import java.util.*;
 
 public class MediaWikiConverter
 {
@@ -45,7 +46,58 @@ public class MediaWikiConverter
 		System.out.println("input:  " + inputFolder);
 		System.out.println("output: " + outputFolder);
 		System.out.println("index:  " + indexPage);
+
+		File outputFolderFile = new File(outputFolder);
+		if (!outputFolderFile.exists())
+		{
+			if (!new File(outputFolder).mkdir())
+				throw new RuntimeException("Failed to create output folder " + outputFolder);
+		}
+		readPage(indexPage, "index.html");
 		// TODO Auto-generated method stub
+	}
+
+	private static void readPage(String inputFileName, String outputFileName)
+	{
+		try
+		{
+			BufferedReader br = new BufferedReader(new FileReader(inputFolder + "/" + inputFileName));
+			ArrayList<String> output = new ArrayList<>();
+			String line;
+			while ((line = br.readLine()) != null)
+			{
+				// No editing.
+				if (line.startsWith("<link rel=\"alternate\" type=\"application/x-wiki\" title=\"Edit\"")
+						&& line.endsWith("&amp;action=edit\"/>"))
+					continue;
+				if (line.startsWith("<link rel=\"edit\" title=\"Edit\"") && line.endsWith("&amp;action=edit\"/>"))
+					continue;
+				// No search.
+				if (line.startsWith("<link rel=\"search\" type=\"application/opensearchdescription+xml\""))
+					continue;
+				// No RSD, whatever that is...
+				if (line.startsWith("<link rel=\"EditURI\" type=\"application/rsd+xml\"")
+						&& line.endsWith("/wiki/api.php?action=rsd\"/>"))
+					continue;
+				// No Atom feed
+				if (line.startsWith("<link rel=\"alternate\" type=\"application/atom+xml\"")
+						&& line.endsWith("feed=atom\"/>"))
+					continue;
+				// No jump links
+				if (line.contains("<a class=\"mw-jump-link\" href=\"Special%25"))
+					continue;
+				output.add(line);
+			}
+			br.close();
+			PrintWriter pw = new PrintWriter(outputFolder + "/" + outputFileName);
+			for (String outputLine : output)
+				pw.println(outputLine);
+			pw.close();
+		}
+		catch (IOException e)
+		{
+			throw new RuntimeException(e);
+		}
 	}
 
 	/**
