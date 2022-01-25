@@ -135,6 +135,11 @@ public class MediaWikiConverter
 				// Favicon - unnecessary but
 				if (line.startsWith("<link rel=\"shortcut icon\" href=\"../../favicon.ico\"/>"))
 					line = replaceFavicon(line);
+				// Fix the load.php location in few places.
+				if (line.startsWith("<link rel=\"stylesheet\" href=\"../load.php@"))
+					line = replaceLoadLocation(line);
+				if (line.startsWith("<script async=\"\" src=\"../load.php@"))
+					line = replaceLoadLocation(line);
 				output.add(line);
 			}
 			br.close();
@@ -198,6 +203,31 @@ public class MediaWikiConverter
 	{
 		copyFile("../../favicon.ico", "favicon.ico");
 		line = "<link rel=\"shortcut icon\" href=\"favicon.ico\"/>";
+		return line;
+	}
+
+	/**
+	 * Replace load.php location.
+	 *
+	 * @param line HTML with input file location.
+	 * @return HTML with output file location.
+	 */
+	private static String replaceLoadLocation(String line)
+	{
+		int pos = line.indexOf("../load.php");
+		if (pos == -1)
+			throw new RuntimeException("no ../load.php");
+		String fileName = line.substring(pos);
+		int pos2 = fileName.indexOf('"');
+		if (pos2 == -1)
+			throw new RuntimeException("no terminator in load.php");
+		fileName = fileName.substring(0, pos2);
+		while ((pos2 = fileName.indexOf("&amp;")) != -1)
+		{
+			fileName = fileName.substring(0, pos2) + "&" + fileName.substring(pos2 + 5);
+		}
+		copyFile(fileName, fileName.substring(3));
+		line = line.substring(0, pos) + line.substring(pos + 3);
 		return line;
 	}
 
