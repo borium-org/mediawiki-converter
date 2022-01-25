@@ -4,10 +4,13 @@ import java.io.*;
 
 public class MediaWikiConverter
 {
+	/** Input folder with trailing separator. */
 	private static String inputFolder;
 
+	/** Output folder with trailing separator. */
 	private static String outputFolder;
 
+	/** Name of the first page to load. */
 	private static String indexPage;
 
 	public static void main(String[] args)
