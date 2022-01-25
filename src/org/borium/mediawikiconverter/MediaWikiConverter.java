@@ -22,6 +22,15 @@ public class MediaWikiConverter
 	 */
 	private static Set<String> copyFiles = new HashSet<>();
 
+	/**
+	 * Local pages that are already converted. Each entry is in 'wiki page'->'github
+	 * page' format.
+	 */
+	private static HashMap<String, String> localPages = new HashMap<>();
+
+	/** Local links that are seen but not yet converted. */
+	private static Set<String> localLinks = new HashSet<>();
+
 	public static void main(String[] args)
 	{
 		if (args.length == 0)
@@ -62,7 +71,18 @@ public class MediaWikiConverter
 				throw new RuntimeException("Failed to create output folder " + outputFolder);
 		}
 		readPage(indexPage, "index.html");
-		// TODO Auto-generated method stub
+		while (localLinks.size() > 0)
+		{
+			String[] elements = localLinks.toArray(new String[localLinks.size()]);
+			String url = elements[0];
+			localLinks.remove(url);
+			int pos;
+			while ((pos = url.indexOf("%253A")) != -1)
+			{
+				url = url.substring(0, pos) + "%3A" + url.substring(pos + 5);
+			}
+			readPage(url, url);
+		}
 	}
 
 	/**
@@ -98,8 +118,48 @@ public class MediaWikiConverter
 		}
 	}
 
+	/**
+	 * Process each HTML line and extract links to local pages. The working
+	 * assumption is that each link is on one line without wrapping into next line.
+	 * Each line can have multiple links. Only internal links that don't begin with
+	 * 'http://' or 'https://' are processed, the links with protocol in the
+	 * beginning are all external links.
+	 *
+	 * @param line Line in the input HTML file.
+	 */
+	private static void processLocalLinks(String line)
+	{
+		int pos;
+		while ((pos = line.indexOf("<a href=\"")) != -1)
+		{
+			line = line.substring(pos + 9);
+			if (line.startsWith("http://") || line.startsWith("https://"))
+			{
+				line = line.substring(7);
+				continue;
+			}
+			int pos2 = line.indexOf("\" title=\"");
+			if (pos2 == -1)
+			{
+				int pos3 = line.indexOf(".html#");
+				if (pos3 == -1)
+					throw new RuntimeException("href found without terminator");
+				pos2 = pos3 + 5;
+			}
+			String url = line.substring(0, pos2);
+			while ((pos = url.indexOf("%253A")) != -1)
+			{
+				url = url.substring(0, pos) + "%3A" + url.substring(pos + 5);
+			}
+			if (!localPages.containsKey(url))
+				localLinks.add(url);
+			line = line.substring(pos2);
+		}
+	}
+
 	private static void readPage(String inputFileName, String outputFileName)
 	{
+		localPages.put(inputFileName, outputFileName);
 		try
 		{
 			BufferedReader br = new BufferedReader(new FileReader(inputFolder + "/" + inputFileName));
@@ -143,6 +203,7 @@ public class MediaWikiConverter
 				// Fix the MediaWiki logo location, just being nice...
 				if (line.startsWith("\t<li id=\"footer-poweredbyico\">"))
 					line = replaceMediaWikiImageLocation(line);
+				processLocalLinks(line);
 				output.add(line);
 			}
 			br.close();
