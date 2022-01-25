@@ -86,6 +86,9 @@ public class MediaWikiConverter
 				// No jump links
 				if (line.contains("<a class=\"mw-jump-link\" href=\"Special%25"))
 					continue;
+				// No navigation. This is a hack to reduce number of source lines.
+				if (line.equals("<div id=\"mw-navigation\">"))
+					line = skipNavigation(br);
 				output.add(line);
 			}
 			br.close();
@@ -136,6 +139,53 @@ public class MediaWikiConverter
 		catch (IOException e)
 		{
 			throw new RuntimeException(e);
+		}
+	}
+
+	/**
+	 * Remove navigation <div>. Reads as much as necessary to skip the web page
+	 * section. Returns empty string so that all checks later will not fail with
+	 * null pointer but they will not match anything in startsWith() or endsWith().
+	 *
+	 * @param br Buffered reader for the web page.
+	 * @return 0-length string.
+	 */
+	private static String skipNavigation(BufferedReader br)
+	{
+		skipPast(br, "</nav>");
+		skipPast(br, "</nav>");
+		skipPast(br, "</nav>");
+		skipPast(br, "</nav>");
+		skipPast(br, "</nav>");
+		skipPast(br, "</div>");
+		skipPast(br, "</nav>");
+		skipPast(br, "</nav>");
+		skipPast(br, "</div>");
+		skipPast(br, "</div>");
+		return "";
+	}
+
+	/**
+	 * Read the input and stop when we see the provided string pattern. Pattern is
+	 * not included in the output.
+	 *
+	 * @param br     Buffered reader for the web page.
+	 * @param string String to detect.
+	 */
+	private static void skipPast(BufferedReader br, String string)
+	{
+		try
+		{
+			String line;
+			while ((line = br.readLine()) != null)
+			{
+				if (line.equals(string))
+					break;
+			}
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
 		}
 	}
 }
