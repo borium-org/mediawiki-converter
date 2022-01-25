@@ -1,6 +1,7 @@
 package org.borium.mediawikiconverter;
 
 import java.io.*;
+import java.nio.file.*;
 import java.util.*;
 
 public class MediaWikiConverter
@@ -13,6 +14,13 @@ public class MediaWikiConverter
 
 	/** Name of the first page to load. */
 	private static String indexPage;
+
+	/**
+	 * Set of files copied to the destination. Set is used to avoid multiple copying
+	 * of same file to same destination. Each entry is in 'source->destination'
+	 * format so that same file can be copied to multiple destinations if needed.
+	 */
+	private static Set<String> copyFiles = new HashSet<>();
 
 	public static void main(String[] args)
 	{
@@ -57,6 +65,39 @@ public class MediaWikiConverter
 		// TODO Auto-generated method stub
 	}
 
+	/**
+	 * Copy file 'from' 'to', do it only once.
+	 *
+	 * @param fromFileName
+	 * @param toFileName
+	 */
+	private static void copyFile(String fromFileName, String toFileName)
+	{
+		fromFileName = inputFolder + fromFileName;
+		toFileName = outputFolder + toFileName;
+		if (!copyFiles.contains(fromFileName + "->" + toFileName))
+		{
+			copyFiles.add(fromFileName + "->" + toFileName);
+			File from = new File(fromFileName);
+			File to = new File(toFileName);
+			try
+			{
+				Path fromPath = from.toPath().normalize();
+				Path toPath = to.toPath().normalize();
+				String toFilePath = toPath.toString();
+				int pos = toFilePath.lastIndexOf('\\');
+				String directory = toFilePath.substring(0, pos);
+				File dir = new File(directory);
+				Files.createDirectories(dir.toPath());
+				Files.copy(fromPath, toPath, StandardCopyOption.REPLACE_EXISTING);
+			}
+			catch (IOException e)
+			{
+				e.printStackTrace();
+			}
+		}
+	}
+
 	private static void readPage(String inputFileName, String outputFileName)
 	{
 		try
@@ -89,6 +130,11 @@ public class MediaWikiConverter
 				// No navigation. This is a hack to reduce number of source lines.
 				if (line.equals("<div id=\"mw-navigation\">"))
 					line = skipNavigation(br);
+				// All rejection tests passed, add the line, but optionally do some
+				// substitutions first.
+				// Favicon - unnecessary but
+				if (line.startsWith("<link rel=\"shortcut icon\" href=\"../../favicon.ico\"/>"))
+					line = replaceFavicon(line);
 				output.add(line);
 			}
 			br.close();
@@ -140,6 +186,19 @@ public class MediaWikiConverter
 		{
 			throw new RuntimeException(e);
 		}
+	}
+
+	/**
+	 * Copy the favicon and replace the location in the web page.
+	 *
+	 * @param line Line in the input HTML file.
+	 * @return New line for the output HTML file.
+	 */
+	private static String replaceFavicon(String line)
+	{
+		copyFile("../../favicon.ico", "favicon.ico");
+		line = "<link rel=\"shortcut icon\" href=\"favicon.ico\"/>";
+		return line;
 	}
 
 	/**
