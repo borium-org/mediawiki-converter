@@ -140,6 +140,9 @@ public class MediaWikiConverter
 					line = replaceLoadLocation(line);
 				if (line.startsWith("<script async=\"\" src=\"../load.php@"))
 					line = replaceLoadLocation(line);
+				// Fix the MediaWiki logo location, just being nice...
+				if (line.startsWith("\t<li id=\"footer-poweredbyico\">"))
+					line = replaceMediaWikiImageLocation(line);
 				output.add(line);
 			}
 			br.close();
@@ -229,6 +232,32 @@ public class MediaWikiConverter
 		copyFile(fileName, fileName.substring(3));
 		line = line.substring(0, pos) + line.substring(pos + 3);
 		return line;
+	}
+
+	/**
+	 * Replace 3 image locations for MediaWiki images.
+	 *
+	 * @param line HTML with input file locations.
+	 * @return HTML with output file locations.
+	 */
+	private static String replaceMediaWikiImageLocation(String line)
+	{
+		String output = "";
+		for (int i = 0; i < 3; i++)
+		{
+			int pos = line.indexOf("../resources");
+			if (pos == -1)
+				throw new RuntimeException("No ../resources in mediawiki footer");
+			output += line.substring(0, pos);
+			int pos2 = line.indexOf(".png");
+			if (pos2 == -1)
+				throw new RuntimeException("No .png in ../resources");
+			String fileName = line.substring(pos, pos2 + 4);
+			copyFile(fileName, fileName.substring(3));
+			output += fileName.substring(3);
+			line = line.substring(pos2 + 4);
+		}
+		return output + line;
 	}
 
 	/**
