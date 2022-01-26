@@ -214,6 +214,9 @@ public class MediaWikiConverter
 				// looks much better if camel-case title is split into individual components.
 				if (line.contains("<h1 id=\"firstHeading\" class=\"firstHeading\" >"))
 					line = replaceCamelCaseTitle(line);
+				// All headings at any level in the body have [Edit] link. Remove it.
+				if (line.contains("<span class=\"mw-editsection\">"))
+					line = removeEditSection(line);
 				processLocalLinks(line);
 				output.add(line);
 			}
@@ -266,6 +269,63 @@ public class MediaWikiConverter
 		{
 			throw new RuntimeException(e);
 		}
+	}
+
+	/**
+	 * Remove edit section. Edit section link is in a &lt;span&gt; with class
+	 * mw-editsection, and that span contains a span for '[', link to the edit
+	 * functionality, and a span for ']'.
+	 *
+	 * @param line Input HTML line with edit section.
+	 * @return Output HTML line without edit section.
+	 */
+	private static String removeEditSection(String line)
+	{
+		String thisLine = line;
+		// the end of span with the title text
+		int pos = thisLine.indexOf("</span>");
+		if (pos == -1)
+			throw new RuntimeException("No title span terminator");
+		pos += 7;
+		String outputLine = thisLine.substring(0, pos);
+		thisLine = thisLine.substring(pos);
+		// optional span with class mw-headline, include it in output
+		if (thisLine.startsWith("<span class=\"mw-headline\""))
+		{
+			pos = thisLine.indexOf("</span>");
+			if (pos == -1)
+				throw new RuntimeException("No headline span terminator");
+			pos += 7;
+			outputLine += thisLine.substring(0, pos);
+			thisLine = thisLine.substring(pos);
+		}
+		// skip over edit span beginning
+		String editSpanStart = "<span class=\"mw-editsection\">";
+		if (!thisLine.startsWith(editSpanStart))
+			throw new RuntimeException("No edit section");
+		thisLine = thisLine.substring(editSpanStart.length());
+		// skip over opening bracket span
+		String spanOpenBracket = "<span class=\"mw-editsection-bracket\">[</span>";
+		if (!thisLine.startsWith(spanOpenBracket))
+			throw new RuntimeException("No open bracket ");
+		thisLine = thisLine.substring(spanOpenBracket.length());
+		// skip over the edit link
+		if (!thisLine.startsWith("<a href="))
+			throw new RuntimeException("No edit link");
+		pos = thisLine.indexOf("</a>") + 4;
+		thisLine = thisLine.substring(pos);
+		// skip over close bracket span
+		String spanCloseBracket = "<span class=\"mw-editsection-bracket\">]</span>";
+		if (!thisLine.startsWith(spanCloseBracket))
+			throw new RuntimeException("No close bracket");
+		thisLine = thisLine.substring(spanCloseBracket.length());
+		// skip over edit span ending
+		String spanEnd = "</span>";
+		if (!thisLine.startsWith(spanEnd))
+			throw new RuntimeException("No edit section end");
+		thisLine = thisLine.substring(spanEnd.length());
+		outputLine += thisLine;
+		return outputLine;
 	}
 
 	/**
