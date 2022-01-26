@@ -210,6 +210,10 @@ public class MediaWikiConverter
 				// Fix the MediaWiki logo location, just being nice...
 				if (line.startsWith("\t<li id=\"footer-poweredbyico\">"))
 					line = replaceMediaWikiImageLocation(line);
+				// Fix the first level heading. It is same as the page URL without .html, but it
+				// looks much better if camel-case title is split into individual components.
+				if (line.contains("<h1 id=\"firstHeading\" class=\"firstHeading\" >"))
+					line = replaceCamelCaseTitle(line);
 				processLocalLinks(line);
 				output.add(line);
 			}
@@ -262,6 +266,52 @@ public class MediaWikiConverter
 		{
 			throw new RuntimeException(e);
 		}
+	}
+
+	/**
+	 * Replace camel-case title in &lt;h1&gt; with a split title. If title contains
+	 * spaces, such as 'Main Page', leave it as is.
+	 *
+	 * @param line Input HTML line with &lt;h1&gt; title.
+	 * @return Output HTML line with &lt;h1&gt; title split into components.
+	 */
+	private static String replaceCamelCaseTitle(String line)
+	{
+		String h1 = "<h1 id=\"firstHeading\" class=\"firstHeading\" >";
+		int pos = line.indexOf(h1);
+		if (pos == -1)
+			throw new RuntimeException("Found h1 once, couldn't find now");
+		String heading = line.substring(pos + h1.length());
+		pos = heading.indexOf("</h1>");
+		if (pos == -1)
+			throw new RuntimeException("h1 not terminated");
+		heading = heading.substring(0, pos);
+		if (heading.indexOf(' ') >= 0)
+			return line;
+		// https://stackoverflow.com/questions/3752636/java-split-string-when-an-uppercase-letter-is-found
+		String[] split = heading.split("(?=\\p{Upper})");
+		ArrayList<String> parts = new ArrayList<>();
+		for (int i = 0; i < split.length; i++)
+		{
+			if (split[i].length() > 1)
+			{
+				parts.add(split[i]);
+			}
+			else
+			{
+				String acronym = split[i];
+				while (i < split.length - 1)
+				{
+					if (split[i + 1].length() != 1)
+						break;
+					acronym += split[i + 1];
+					i++;
+				}
+				parts.add(acronym);
+			}
+		}
+		String newHeading = String.join(" ", parts);
+		return "\t" + h1 + newHeading + "</h1>";
 	}
 
 	/**
