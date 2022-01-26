@@ -190,6 +190,13 @@ public class MediaWikiConverter
 				// No navigation. This is a hack to reduce number of source lines.
 				if (line.equals("<div id=\"mw-navigation\">"))
 					line = skipNavigation(br);
+				// Pointless comments with some Unicode in them. Git does not like the idea of
+				// committing these weird characters.
+				if (line.equals("<!-- "))
+				{
+					skipPast(br, "-->");
+					line = "";
+				}
 				// All rejection tests passed, add the line, but optionally do some
 				// substitutions first.
 				// Favicon - unnecessary but
