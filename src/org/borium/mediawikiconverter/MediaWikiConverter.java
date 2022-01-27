@@ -22,6 +22,15 @@ public class MediaWikiConverter
 	 */
 	private static Set<String> copyFiles = new HashSet<>();
 
+	/**
+	 * Local pages that are already converted. Each entry is in 'wiki page'->'github
+	 * page' format.
+	 */
+	private static HashMap<String, String> localPages = new HashMap<>();
+
+	/** Local links that are seen but not yet converted. */
+	private static Set<String> localLinks = new HashSet<>();
+
 	public static void main(String[] args)
 	{
 		if (args.length == 0)
@@ -62,7 +71,18 @@ public class MediaWikiConverter
 				throw new RuntimeException("Failed to create output folder " + outputFolder);
 		}
 		readPage(indexPage, "index.html");
-		// TODO Auto-generated method stub
+		while (localLinks.size() > 0)
+		{
+			String[] elements = localLinks.toArray(new String[localLinks.size()]);
+			String url = elements[0];
+			localLinks.remove(url);
+			int pos;
+			while ((pos = url.indexOf("%253A")) != -1)
+			{
+				url = url.substring(0, pos) + "%3A" + url.substring(pos + 5);
+			}
+			readPage(url, url);
+		}
 	}
 
 	/**
@@ -98,8 +118,48 @@ public class MediaWikiConverter
 		}
 	}
 
+	/**
+	 * Process each HTML line and extract links to local pages. The working
+	 * assumption is that each link is on one line without wrapping into next line.
+	 * Each line can have multiple links. Only internal links that don't begin with
+	 * 'http://' or 'https://' are processed, the links with protocol in the
+	 * beginning are all external links.
+	 *
+	 * @param line Line in the input HTML file.
+	 */
+	private static void processLocalLinks(String line)
+	{
+		int pos;
+		while ((pos = line.indexOf("<a href=\"")) != -1)
+		{
+			line = line.substring(pos + 9);
+			if (line.startsWith("http://") || line.startsWith("https://"))
+			{
+				line = line.substring(7);
+				continue;
+			}
+			int pos2 = line.indexOf("\" title=\"");
+			if (pos2 == -1)
+			{
+				int pos3 = line.indexOf(".html#");
+				if (pos3 == -1)
+					throw new RuntimeException("href found without terminator");
+				pos2 = pos3 + 5;
+			}
+			String url = line.substring(0, pos2);
+			while ((pos = url.indexOf("%253A")) != -1)
+			{
+				url = url.substring(0, pos) + "%3A" + url.substring(pos + 5);
+			}
+			if (!localPages.containsKey(url))
+				localLinks.add(url);
+			line = line.substring(pos2);
+		}
+	}
+
 	private static void readPage(String inputFileName, String outputFileName)
 	{
+		localPages.put(inputFileName, outputFileName);
 		try
 		{
 			BufferedReader br = new BufferedReader(new FileReader(inputFolder + "/" + inputFileName));
@@ -130,6 +190,13 @@ public class MediaWikiConverter
 				// No navigation. This is a hack to reduce number of source lines.
 				if (line.equals("<div id=\"mw-navigation\">"))
 					line = skipNavigation(br);
+				// Pointless comments with some Unicode in them. Git does not like the idea of
+				// committing these weird characters.
+				if (line.equals("<!-- "))
+				{
+					skipPast(br, "-->");
+					line = "";
+				}
 				// All rejection tests passed, add the line, but optionally do some
 				// substitutions first.
 				// Favicon - unnecessary but
@@ -143,6 +210,14 @@ public class MediaWikiConverter
 				// Fix the MediaWiki logo location, just being nice...
 				if (line.startsWith("\t<li id=\"footer-poweredbyico\">"))
 					line = replaceMediaWikiImageLocation(line);
+				// Fix the first level heading. It is same as the page URL without .html, but it
+				// looks much better if camel-case title is split into individual components.
+				if (line.contains("<h1 id=\"firstHeading\" class=\"firstHeading\" >"))
+					line = replaceCamelCaseTitle(line);
+				// All headings at any level in the body have [Edit] link. Remove it.
+				if (line.contains("<span class=\"mw-editsection\">"))
+					line = removeEditSection(line);
+				processLocalLinks(line);
 				output.add(line);
 			}
 			br.close();
@@ -194,6 +269,109 @@ public class MediaWikiConverter
 		{
 			throw new RuntimeException(e);
 		}
+	}
+
+	/**
+	 * Remove edit section. Edit section link is in a &lt;span&gt; with class
+	 * mw-editsection, and that span contains a span for '[', link to the edit
+	 * functionality, and a span for ']'.
+	 *
+	 * @param line Input HTML line with edit section.
+	 * @return Output HTML line without edit section.
+	 */
+	private static String removeEditSection(String line)
+	{
+		String thisLine = line;
+		// the end of span with the title text
+		int pos = thisLine.indexOf("</span>");
+		if (pos == -1)
+			throw new RuntimeException("No title span terminator");
+		pos += 7;
+		String outputLine = thisLine.substring(0, pos);
+		thisLine = thisLine.substring(pos);
+		// optional span with class mw-headline, include it in output
+		if (thisLine.startsWith("<span class=\"mw-headline\""))
+		{
+			pos = thisLine.indexOf("</span>");
+			if (pos == -1)
+				throw new RuntimeException("No headline span terminator");
+			pos += 7;
+			outputLine += thisLine.substring(0, pos);
+			thisLine = thisLine.substring(pos);
+		}
+		// skip over edit span beginning
+		String editSpanStart = "<span class=\"mw-editsection\">";
+		if (!thisLine.startsWith(editSpanStart))
+			throw new RuntimeException("No edit section");
+		thisLine = thisLine.substring(editSpanStart.length());
+		// skip over opening bracket span
+		String spanOpenBracket = "<span class=\"mw-editsection-bracket\">[</span>";
+		if (!thisLine.startsWith(spanOpenBracket))
+			throw new RuntimeException("No open bracket ");
+		thisLine = thisLine.substring(spanOpenBracket.length());
+		// skip over the edit link
+		if (!thisLine.startsWith("<a href="))
+			throw new RuntimeException("No edit link");
+		pos = thisLine.indexOf("</a>") + 4;
+		thisLine = thisLine.substring(pos);
+		// skip over close bracket span
+		String spanCloseBracket = "<span class=\"mw-editsection-bracket\">]</span>";
+		if (!thisLine.startsWith(spanCloseBracket))
+			throw new RuntimeException("No close bracket");
+		thisLine = thisLine.substring(spanCloseBracket.length());
+		// skip over edit span ending
+		String spanEnd = "</span>";
+		if (!thisLine.startsWith(spanEnd))
+			throw new RuntimeException("No edit section end");
+		thisLine = thisLine.substring(spanEnd.length());
+		outputLine += thisLine;
+		return outputLine;
+	}
+
+	/**
+	 * Replace camel-case title in &lt;h1&gt; with a split title. If title contains
+	 * spaces, such as 'Main Page', leave it as is.
+	 *
+	 * @param line Input HTML line with &lt;h1&gt; title.
+	 * @return Output HTML line with &lt;h1&gt; title split into components.
+	 */
+	private static String replaceCamelCaseTitle(String line)
+	{
+		String h1 = "<h1 id=\"firstHeading\" class=\"firstHeading\" >";
+		int pos = line.indexOf(h1);
+		if (pos == -1)
+			throw new RuntimeException("Found h1 once, couldn't find now");
+		String heading = line.substring(pos + h1.length());
+		pos = heading.indexOf("</h1>");
+		if (pos == -1)
+			throw new RuntimeException("h1 not terminated");
+		heading = heading.substring(0, pos);
+		if (heading.indexOf(' ') >= 0)
+			return line;
+		// https://stackoverflow.com/questions/3752636/java-split-string-when-an-uppercase-letter-is-found
+		String[] split = heading.split("(?=\\p{Upper})");
+		ArrayList<String> parts = new ArrayList<>();
+		for (int i = 0; i < split.length; i++)
+		{
+			if (split[i].length() > 1)
+			{
+				parts.add(split[i]);
+			}
+			else
+			{
+				String acronym = split[i];
+				while (i < split.length - 1)
+				{
+					if (split[i + 1].length() != 1)
+						break;
+					acronym += split[i + 1];
+					i++;
+				}
+				parts.add(acronym);
+			}
+		}
+		String newHeading = String.join(" ", parts);
+		return "\t" + h1 + newHeading + "</h1>";
 	}
 
 	/**
