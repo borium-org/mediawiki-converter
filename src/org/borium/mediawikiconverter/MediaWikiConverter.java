@@ -70,7 +70,7 @@ public class MediaWikiConverter
 			if (!new File(outputFolder).mkdir())
 				throw new RuntimeException("Failed to create output folder " + outputFolder);
 		}
-		readPage(indexPage, "index.html");
+		readPage(indexPage);
 		while (localLinks.size() > 0)
 		{
 			String[] elements = localLinks.toArray(new String[localLinks.size()]);
@@ -81,7 +81,7 @@ public class MediaWikiConverter
 			{
 				url = url.substring(0, pos) + "%3A" + url.substring(pos + 5);
 			}
-			readPage(url, url);
+			readPage(url);
 		}
 	}
 
@@ -157,9 +157,9 @@ public class MediaWikiConverter
 		}
 	}
 
-	private static void readPage(String inputFileName, String outputFileName)
+	private static void readPage(String inputFileName)
 	{
-		localPages.put(inputFileName, outputFileName);
+		localPages.put(inputFileName, inputFileName);
 		try
 		{
 			BufferedReader br = new BufferedReader(new FileReader(inputFolder + "/" + inputFileName));
@@ -197,6 +197,26 @@ public class MediaWikiConverter
 					skipPast(br, "-->");
 					line = "";
 				}
+				// XXX Try to remove scripts
+				if (line.startsWith("<script>document.documentElement.className=\"client-js\";"))
+				{
+					line = br.readLine();
+					continue;
+				}
+				if (line.startsWith("<script>(RLQ=window.RLQ||[]).push(function(){mw.loader"))
+				{
+					line = br.readLine();
+					continue;
+				}
+				if (line.startsWith("<script>(RLQ=window.RLQ||[]).push(function(){mw.config"))
+					continue;
+				// Skip a pointless ever-changing comment, two lines
+				if (line.startsWith("<!-- Saved in parser cache"))
+				{
+					line = br.readLine();
+					continue;
+				}
+				// XXX Try to remove scripts
 				// All rejection tests passed, add the line, but optionally do some
 				// substitutions first.
 				// Favicon - unnecessary but
@@ -221,7 +241,7 @@ public class MediaWikiConverter
 				output.add(line);
 			}
 			br.close();
-			PrintWriter pw = new PrintWriter(outputFolder + "/" + outputFileName);
+			PrintWriter pw = new PrintWriter(outputFolder + "/" + inputFileName);
 			for (String outputLine : output)
 				pw.println(outputLine);
 			pw.close();
